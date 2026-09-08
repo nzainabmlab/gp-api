@@ -1,0 +1,38 @@
+name: Stage 3 - Receive and relay to gp-web
+
+"on":
+  repository_dispatch:
+    types: [contracts-ready]
+
+jobs:
+  receive:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Show received payload
+        run: |
+          echo "Received: ${{ github.event.action }}"
+          echo "feature_id: ${{ github.event.client_payload.feature_id }}"
+          echo "pin: ${{ github.event.client_payload.pin }}"
+          echo "origin: ${{ github.event.client_payload.origin }}"
+
+      - name: Mint App token
+        id: token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.GP_APP_ID }}
+          private-key: ${{ secrets.GP_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: |
+            gp-platform
+            gp-api
+            gp-web
+
+      - name: Relay to gp-web
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        run: |
+          gh api repos/${{ github.repository_owner }}/gp-web/dispatches \
+            -f event_type=be-tested \
+            -F 'client_payload[feature_id]=${{ github.event.client_payload.feature_id }}' \
+            -F 'client_payload[pin]=${{ github.event.client_payload.pin }}' \
+            -F 'client_payload[origin]=gp-api'
