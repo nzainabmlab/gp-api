@@ -1,0 +1,53 @@
+name: Stage 4 - Consume prerelease pin
+
+"on":
+  workflow_dispatch:
+    inputs:
+      pin:
+        description: 'Exact version to pin (e.g. 0.0.0-pr-3-a1b2c3d)'
+        required: true
+
+jobs:
+  consume:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reject invalid pins
+        run: |
+          PIN="${{ github.event.inputs.pin }}"
+          if [ "$PIN" = "main" ] || [ "$PIN" = "latest" ] || [[ "$PIN" == refs/* ]]; then
+            echo "::error::Branch tips and dist-tags are invalid pins (GP-00.K). Use an exact version."
+            exit 1
+          fi
+          echo "Pin format accepted: $PIN"
+
+      - name: Mint App token
+        id: token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.GP_APP_ID }}
+          private-key: ${{ secrets.GP_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install the exact prerelease
+        env:
+          NODE_AUTH_TOKEN: ${{ steps.token.outputs.token }}
+        run: |
+          echo "@nzainabmlab:registry=https://npm.pkg.github.com" > .npmrc
+          echo "//npm.pkg.github.com/:_authToken=\${NODE_AUTH_TOKEN}" >> .npmrc
+          npm install @nzainabmlab/gp-contracts@${{ github.event.inputs.pin }} --no-save
+          INSTALLED=$(node -p "require('@nzainabmlab/gp-contracts/package.json').version")
+          echo "Installed version: $INSTALLED"
+          if [ "$INSTALLED" != "${{ github.event.inputs.pin }}" ]; then
+            echo "::error::Resolved $INSTALLED but pinned ${{ github.event.inputs.pin }}"
+            exit 1
+          fi
+          echo "STAGE 4 PASS - built against contracts from an UNMERGED PR"
